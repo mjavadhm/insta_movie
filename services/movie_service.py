@@ -1,6 +1,7 @@
 from datetime import datetime
 import tmdbsimple as tmdb
 from sqlalchemy import select
+from sqlalchemy.sql.expression import func  # این خط را اضافه کنید
 from sqlalchemy.exc import IntegrityError
 
 from models.movie import Movie
@@ -163,3 +164,13 @@ async def save_movie_with_cast_and_crew(session, movie_data, cast_list, crew_lis
             select(Movie).where(Movie.tmdb_id == movie_data["tmdb_id"])
         )
         return result.scalar_one_or_none()
+
+
+async def get_random_movie(session):
+    """
+    یک فیلم تصادفی از دیتابیس برمی‌گرداند.
+    """
+    result = await session.execute(
+        select(Movie).order_by(func.random()).limit(1)
+    )
+    return result.scalar_one_or_none()
