@@ -28,3 +28,8 @@ MOVIES_CHANNEL_ID = getenv("MOVIES_CHANNEL_ID")
 if not MOVIES_CHANNEL_ID:
     raise ValueError("MOVIES_CHANNEL_ID not set in .env")
 MOVIES_CHANNEL_ID = int(MOVIES_CHANNEL_ID)
+
+# Generative AI API Key
+GEMINI_API_KEY = getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY not set in .env")
