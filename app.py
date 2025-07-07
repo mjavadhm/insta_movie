@@ -3,7 +3,7 @@ import logging
 from aiogram.types import BotCommand
 from bot import dp, bot
 from routers import commands_router, callbacks_router, messages_router
-
+from logger import get_logger
 # Get logger
 logger = get_logger()
 
