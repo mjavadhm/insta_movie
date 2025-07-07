@@ -13,6 +13,25 @@ from config import TMDB_API_KEY
 tmdb.API_KEY = TMDB_API_KEY
 
 
+async def fetch_and_save_upcoming_movies(session, page=1, limit=None):
+    movies_api = tmdb.Movies()
+    response = movies_api.upcoming(page=page)
+
+    results = response.get("results", [])
+    if limit:
+        results = results[:limit]
+
+    saved_movies = []
+    for item in results:
+        try:
+            movie = await fetch_and_save_movie(session, tmdb_id=item["id"])
+            if movie:
+                saved_movies.append(movie)
+        except Exception as e:
+            print(f"❌ خطا در ذخیره فیلم {item['id']}: {e}")
+    return saved_movies
+
+
 async def search_movie_by_title(query: str) -> dict | None:
     """
     یک فیلم را بر اساس عنوان در TMDb جستجو می‌کند و اولین نتیجه را برمی‌گرداند.
