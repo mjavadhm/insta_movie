@@ -13,82 +13,78 @@ router = Router(name="callbacks")
 logger = get_logger()
 
 # A temporary cache to store movie titles linked to a unique ID
-# { "unique_id": ["Movie 1", "Movie 2"] }
 callback_movie_cache = {}
 
-# Helper function to format movie info text
 def _format_movie_text_for_user(movie: Movie) -> str:
+    """Helper function to format movie info text for the user"""
     text = f"🎬 <b>{movie.title}</b>\n\n"
     if movie.release_date:
-        text += f"📅 <b>تاریخ انتشار:</b> {movie.release_date.strftime('%Y-%m-%d')}\n"
+        text += f"📅 <b>Release Date:</b> {movie.release_date.strftime('%Y-%m-%d')}\n"
     if movie.vote_average:
-        text += f"⭐ <b>امتیاز:</b> {movie.vote_average}/10\n"
+        text += f"⭐ <b>Rating:</b> {movie.vote_average}/10\n"
     if movie.genres:
-        text += f"🎭 <b>ژانرها:</b> {', '.join(movie.genres)}\n"
+        text += f"🎭 <b>Genres:</b> {', '.join(movie.genres)}\n"
     if movie.overview:
         overview = movie.overview[:300] + "..." if len(movie.overview) > 300 else movie.overview
-        text += f"\n📝 <b>خلاصه:</b>\n{overview}\n"
+        text += f"\n📝 <b>Overview:</b>\n{overview}\n"
     return text
 
 
 @router.callback_query(F.data.startswith("add_to_db_"))
 async def add_to_database_callback(callback: CallbackQuery):
     """
-    Retrieves movie titles from cache, saves them one by one,
+    Retrieves movie titles from the cache, saves them one by one,
     and sends a confirmation message with a watchlist button for each.
     """
     callback_id = callback.data.replace("add_to_db_", "")
     titles = callback_movie_cache.pop(callback_id, None)
 
     if not titles:
-        await callback.message.edit_text("❌ این درخواست منقضی شده یا مشکلی پیش آمده است. لطفاً لینک را دوباره ارسال کنید.")
+        await callback.message.edit_text("❌ This request has expired or an error occurred. Please send the link again.")
         await callback.answer()
         return
 
-    # Keep the original message and just show a status update
-    await callback.answer(f"⏳ در حال پردازش {len(titles)} فیلم...")
+    await callback.answer(f"⏳ Processing {len(titles)} movie(s)...")
 
     async for session in get_session():
         for title in titles:
             status_message = ""
             movie_to_show = None
-            
+
             try:
                 search_result = await search_movie_by_title(title)
                 if not search_result:
-                    await callback.message.answer(f"❌ فیلمی با عنوان «{title}» پیدا نشد.")
+                    await callback.message.answer(f"❌ Movie with title '{title}' not found.")
                     continue
 
                 tmdb_id = search_result.get("id")
-                
+
                 result = await session.execute(select(Movie).where(Movie.tmdb_id == tmdb_id))
                 existing_movie = result.scalar_one_or_none()
 
                 if existing_movie:
-                    status_message = f"ℹ️ فیلم «{existing_movie.title}» از قبل در دیتابیس وجود داشت."
+                    status_message = f"ℹ️ The movie '{existing_movie.title}' already exists in the database."
                     movie_to_show = existing_movie
                 else:
                     new_movie = await fetch_and_save_movie(session, tmdb_id)
                     if new_movie:
-                        status_message = f"✅ فیلم «{new_movie.title}» با موفقیت به دیتابیس اضافه شد."
+                        status_message = f"✅ The movie '{new_movie.title}' was successfully added to the database."
                         movie_to_show = new_movie
                     else:
-                        # Handle race condition or other errors
-                        await callback.message.answer(f"❌ خطایی در ذخیره‌سازی فیلم «{title}» رخ داد.")
+                        await callback.message.answer(f"❌ An error occurred while saving the movie '{title}'.")
                         continue
-                
+
                 if movie_to_show:
                     info_caption = _format_movie_text_for_user(movie_to_show)
                     full_caption = f"{status_message}\n\n{info_caption}"
-                    
+
                     keyboard = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(
-                            text="➕ افزودن به لیست تماشا",
+                            text="➕ Add to Watchlist",
                             callback_data=f"watchlist_add_{movie_to_show.tmdb_id}"
                         )]
                     ])
 
-                    # Send each movie info as a new message
                     if movie_to_show.poster_url:
                         await callback.message.answer_photo(
                             photo=movie_to_show.poster_url,
@@ -105,75 +101,66 @@ async def add_to_database_callback(callback: CallbackQuery):
 
             except Exception as e:
                 logger.error(f"Error processing and sending movie '{title}': {e}", exc_info=True)
-                await callback.message.answer(f"خطایی در پردازش فیلم '{title}' رخ داد.")
-
-    # The original message with buttons will no longer be deleted.
-    # await callback.message.delete() # <-- This line is removed
+                await callback.message.answer(f"An error occurred while processing the movie '{title}'.")
 
 
 @router.callback_query(F.data.startswith("audio_analyze_"))
 async def analyze_audio_callback(callback: CallbackQuery):
     """Handles the audio analysis button press."""
     shortcode = callback.data.replace("audio_analyze_", "")
-    sent_m = await callback.message.answer("⏳ در حال تحلیل صدای ویدیو... این فرآیند ممکن است چند دقیقه طول بکشد. لطفاً صبور باشید.")
+    sent_m = await callback.message.answer("⏳ Analyzing video audio... This may take a few minutes. Please be patient.")
     await callback.answer()
 
     try:
         titles = await extract_movie_titles_from_audio(shortcode)
-        
+
         if titles:
             found_movies_text = "\n".join(f"• {title}" for title in titles)
-            response_text = f"از تحلیل صدای این ویدیو، فیلم‌های زیر شناسایی شد:\n\n{found_movies_text}"
-            
-            # --- NEW: Create a callback ID and button to add to DB ---
+            response_text = f"The following movies were identified from the video's audio:\n\n{found_movies_text}"
+
             callback_id = str(uuid.uuid4())
             callback_movie_cache[callback_id] = titles
-            
+
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
                     InlineKeyboardButton(
-                        text="➕ اضافه کردن به دیتابیس",
+                        text="➕ Add to Database",
                         callback_data=f"add_to_db_{callback_id}"
                     )
                 ]
             ])
-            # --- END NEW ---
-
-            # Edit the message to show the results and the new button
             await sent_m.edit_text(response_text, reply_markup=keyboard)
         else:
-            await sent_m.edit_text("❌ متاسفانه فیلمی در صدای این ویدیو پیدا نشد یا در تحلیل مشکلی رخ داد.")
-            
+            await sent_m.edit_text("❌ Unfortunately, no movie was found in the video's audio, or an error occurred during analysis.")
+
     except Exception as e:
         logger.error(f"Error in audio analysis callback for {shortcode}: {e}", exc_info=True)
-        await sent_m.edit_text("❌ خطایی غیرمنتظره در فرآیند تحلیل صدا رخ داد.")
-        
+        await sent_m.edit_text("❌ An unexpected error occurred during the audio analysis process.")
+
 
 @router.callback_query(F.data.startswith("download_video_"))
 async def download_video_callback(callback: CallbackQuery):
     """Handles the download video button press using a shortcode."""
     shortcode = callback.data.replace("download_video_", "")
-    sent_m = await callback.message.answer("⏳ در حال دانلود ویدیو، لطفاً صبر کنید...")
-    
+    sent_m = await callback.message.answer("⏳ Downloading video, please wait...")
+
     try:
         video_path = await download_instagram_video(shortcode)
-        
+
         if video_path and os.path.exists(video_path):
             if os.path.getsize(video_path) > 50 * 1024 * 1024:
-                await sent_m.edit_text("❌ حجم ویدیو بیشتر از 50 مگابایت است.")
+                await sent_m.edit_text("❌ Video size is larger than 50 MB.")
                 return
 
             video_file = FSInputFile(video_path)
-            # Send video as a new message
             await callback.message.answer_video(video=video_file, caption=f"Video from: `{shortcode}`")
-            # Delete the "downloading..." message
             await callback.message.delete()
         else:
-            await sent_m.edit_text("❌ متاسفانه دانلود ویدیو با مشکل مواجه شد.")
-            
+            await sent_m.edit_text("❌ Unfortunately, the video download failed.")
+
     except Exception as e:
         logger.error(f"Error sending video {shortcode}: {e}", exc_info=True)
-        await sent_m.edit_text("❌ خطایی در ارسال ویدیو رخ داد.")
+        await sent_m.edit_text("❌ An error occurred while sending the video.")
     finally:
         if 'video_path' in locals() and video_path and os.path.exists(video_path):
             os.remove(video_path)
@@ -190,12 +177,12 @@ async def add_to_watchlist_callback(callback: CallbackQuery):
             )
             await session.commit()
 
-        await callback.answer("✅ به لیست تماشا اضافه شد!", show_alert=True)
-        
+        await callback.answer("✅ Added to watchlist!", show_alert=True)
+
         if callback.message and callback.message.reply_markup:
             updated_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
-                    text="✅ در لیست تماشا", 
+                    text="✅ In Watchlist",
                     callback_data="already_in_watchlist"
                 )]
             ])
@@ -203,7 +190,7 @@ async def add_to_watchlist_callback(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Error adding to watchlist: {e}", exc_info=True)
-        await callback.answer("❌ خطایی رخ داد.", show_alert=True)
+        await callback.answer("❌ An error occurred.", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("watchlist_remove_"))
@@ -216,16 +203,16 @@ async def remove_from_watchlist_callback(callback: CallbackQuery):
                 update(Movie).where(Movie.tmdb_id == tmdb_id).values(is_tracked=False)
             )
             await session.commit()
-            
-        await callback.answer("🗑️ از لیست تماشا حذف شد.", show_alert=True)
+
+        await callback.answer("🗑️ Removed from watchlist.", show_alert=True)
         await callback.message.delete()
-        
+
     except Exception as e:
         logger.error(f"Error removing from watchlist: {e}", exc_info=True)
-        await callback.answer("❌ خطایی رخ داد.", show_alert=True)
+        await callback.answer("❌ An error occurred.", show_alert=True)
 
 
 @router.callback_query(F.data == "already_in_watchlist")
 async def already_in_watchlist_callback(callback: CallbackQuery):
     """Handles clicks on buttons for movies already in the watchlist."""
-    await callback.answer("این فیلم از قبل در لیست شما قرار دارد.", show_alert=False)
+    await callback.answer("This movie is already in your list.", show_alert=False)

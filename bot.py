@@ -1,4 +1,3 @@
-
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -14,10 +13,11 @@ api_server = TelegramAPIServer.from_base(base="http://172.245.152.11:8081")
 session = AiohttpSession(api=api_server)
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML), session=session)
 dp = Dispatcher()
-# Function to get bot instance
+
 def get_bot() -> Bot:
+    """Function to get bot instance"""
     return bot
 
-# Function to get dispatcher instance
 def get_dispatcher() -> Dispatcher:
+    """Function to get dispatcher instance"""
     return dp

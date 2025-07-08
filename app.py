@@ -4,6 +4,7 @@ from aiogram.types import BotCommand
 from bot import dp, bot
 from routers import commands_router, callbacks_router, messages_router
 from logger import get_logger
+
 # Get logger
 logger = get_logger()
 
@@ -13,12 +14,12 @@ dp.include_router(callbacks_router)
 dp.include_router(messages_router)
 
 async def set_commands():
-    """Set bot commands in menu"""
+    """Set bot commands in the menu"""
     commands = [
-        BotCommand(command="start", description="شروع کار با ربات"),
-        BotCommand(command="help", description="نمایش راهنما"),
-        BotCommand(command="random", description="پیشنهاد یک فیلم تصادفی"),
-        BotCommand(command="watchlist", description="نمایش لیست تماشای من"),
+        BotCommand(command="start", description="Start the bot"),
+        BotCommand(command="help", description="Show help"),
+        BotCommand(command="random", description="Suggest a random movie"),
+        BotCommand(command="watchlist", description="Show my watchlist"),
     ]
     await bot.set_my_commands(commands)
 

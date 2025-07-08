@@ -13,7 +13,7 @@ async_session = sessionmaker(
 # Create declarative base
 Base = declarative_base()
 
-# Function to get DB session
 async def get_session() -> AsyncSession:
+    """Function to get a DB session"""
     async with async_session() as session:
         yield session

@@ -11,50 +11,54 @@ router = Router(name="commands")
 logger = get_logger()
 
 def _format_movie_text_for_user(movie: Movie) -> str:
+    """Formats movie information for display to the user."""
     text = f"🎬 <b>{movie.title}</b>\n\n"
     if movie.release_date:
-        text += f"📅 <b>تاریخ انتشار:</b> {movie.release_date.strftime('%Y-%m-%d')}\n"
+        text += f"📅 <b>Release Date:</b> {movie.release_date.strftime('%Y-%m-%d')}\n"
     if movie.vote_average:
-        text += f"⭐ <b>امتیاز:</b> {movie.vote_average}/10\n"
+        text += f"⭐ <b>Rating:</b> {movie.vote_average}/10\n"
     if movie.genres:
-        text += f"🎭 <b>ژانرها:</b> {', '.join(movie.genres)}\n"
+        text += f"🎭 <b>Genres:</b> {', '.join(movie.genres)}\n"
     if movie.overview:
         overview = movie.overview[:300] + "..." if len(movie.overview) > 300 else movie.overview
-        text += f"\n📝 <b>خلاصه:</b>\n{overview}\n"
+        text += f"\n📝 <b>Overview:</b>\n{overview}\n"
     return text
 
 @router.message(Command("start"))
 async def cmd_start(message: Message):
-    await message.answer("👋 خوش آمدید! برای راهنمایی /help را بزنید.")
+    """Handles the /start command."""
+    await message.answer("👋 Welcome! Type /help for guidance.")
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
+    """Handles the /help command."""
     help_text = (
-        "دستورات موجود:\n"
-        "/start - شروع کار\n"
-        "/help - نمایش راهنما\n"
-        "/random - پیشنهاد یک فیلم تصادفی\n"
-        "/watchlist - نمایش لیست تماشای شما\n\n"
-        "همچنین می‌توانید نام فیلم یا لینک پستی از اینستاگرام را برای من ارسال کنید!"
+        "Available commands:\n"
+        "/start - Start the bot\n"
+        "/help - Show this help message\n"
+        "/random - Get a random movie suggestion\n"
+        "/watchlist - View your watchlist\n\n"
+        "You can also send me a movie title or a link to an Instagram post!"
     )
     await message.answer(help_text)
 
 @router.message(Command("random"))
 async def cmd_random(message: Message):
+    """Handles the /random command by suggesting a random movie."""
     async for session in get_session():
         movie = await get_random_movie(session)
         if not movie:
-            await message.answer("هنوز فیلمی در دیتابیس نیست.")
+            await message.answer("There are no movies in the database yet.")
             return
 
         caption = _format_movie_text_for_user(movie)
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
-                text="➕ افزودن به لیست تماشا", 
+                text="➕ Add to Watchlist",
                 callback_data=f"watchlist_add_{movie.tmdb_id}"
             )]
         ])
-        
+
         if movie.poster_url:
             await message.answer_photo(photo=movie.poster_url, caption=caption, reply_markup=keyboard, parse_mode="HTML")
         else:
@@ -63,7 +67,7 @@ async def cmd_random(message: Message):
 @router.message(Command("watchlist"))
 async def cmd_watchlist(message: Message):
     """Displays the user's watchlist."""
-    await message.answer("⏳ در حال دریافت لیست تماشای شما...")
+    await message.answer("⏳ Fetching your watchlist...")
     async for session in get_session():
         result = await session.execute(
             select(Movie).where(Movie.is_tracked == True).order_by(Movie.created_at.desc())
@@ -71,15 +75,15 @@ async def cmd_watchlist(message: Message):
         watchlist_movies = result.scalars().all()
 
     if not watchlist_movies:
-        await message.answer("لیست تماشای شما خالی است. می‌توانید با جستجوی فیلم یا ارسال لینک اینستاگرام، فیلم‌ها را به آن اضافه کنید.")
+        await message.answer("Your watchlist is empty. You can add movies by searching for them or sending an Instagram link.")
         return
 
-    await message.answer(f"شما {len(watchlist_movies)} فیلم در لیست تماشای خود دارید:")
+    await message.answer(f"You have {len(watchlist_movies)} movie(s) in your watchlist:")
     for movie in watchlist_movies:
         caption = _format_movie_text_for_user(movie)
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
-                text="🗑️ حذف از لیست تماشا",
+                text="🗑️ Remove from Watchlist",
                 callback_data=f"watchlist_remove_{movie.tmdb_id}"
             )]
         ])

@@ -1,5 +1,3 @@
-# services/reel_service.py
-
 from instagrapi import Client
 from instagrapi.exceptions import LoginRequired
 import google.generativeai as genai
@@ -9,19 +7,17 @@ from typing import List, Optional
 import os
 from pathlib import Path
 from moviepy.video.io.VideoFileClip import VideoFileClip
-
 import asyncio
 
 logger = get_logger()
 cl = Client()
 
-# ... (بخش لاگین اینستاگرام بدون تغییر)
 SESSION_FILE = f"./instagrapi_session.json"
 
 try:
     if os.path.exists(SESSION_FILE):
         cl.load_settings(SESSION_FILE)
-        logger.info("✅ instagrapi session loaded successfully from file.")
+        logger.info("✅ Instagrapi session loaded successfully from file.")
         cl.get_timeline_feed()
     else:
         logger.info("Session file not found, logging in with username and password.")
@@ -36,14 +32,12 @@ except LoginRequired:
 except Exception as e:
     logger.error(f"❌ An unexpected error occurred during Instagram client setup: {e}")
 
-
 genai.configure(api_key=GEMINI_API_KEY)
-# *** CORRECTED: Using the latest and best model for this task ***
 model = genai.GenerativeModel('gemini-2.5-flash')
 
 
 async def get_post_caption(shortcode: str) -> Optional[str]:
-    # ... (بدون تغییر)
+    """Fetches the caption of an Instagram post."""
     try:
         media_pk = cl.media_pk_from_url(f"https://www.instagram.com/p/{shortcode}/")
         media_info = cl.media_info(media_pk)
@@ -53,7 +47,7 @@ async def get_post_caption(shortcode: str) -> Optional[str]:
         return None
 
 async def download_instagram_video(shortcode: str) -> Optional[str]:
-    # ... (بدون تغییر)
+    """Downloads a video from an Instagram post."""
     try:
         logger.info(f"Downloading video for shortcode: {shortcode}")
         download_dir = Path("downloads")
@@ -68,7 +62,7 @@ async def download_instagram_video(shortcode: str) -> Optional[str]:
 
 
 async def extract_movie_titles_from_caption(caption: str) -> List[str]:
-    # ... (بدون تغییر)
+    """Extracts movie titles from a given text using a generative AI model."""
     if not caption:
         return []
     try:
@@ -102,23 +96,23 @@ async def extract_movie_titles_from_audio(shortcode: str) -> List[str]:
 
         logger.info(f"Extracting audio from {video_path}")
         audio_path = f"{video_path}.mp3"
-        
+
         loop = asyncio.get_event_loop()
         video_clip = VideoFileClip(video_path)
         await loop.run_in_executor(None, lambda: video_clip.audio.write_audiofile(audio_path, logger=None))
-        video_clip.close() # Close the clip
-        
+        video_clip.close()
+
         logger.info(f"Uploading audio file {audio_path} to Gemini...")
         audio_file = await loop.run_in_executor(None, lambda: genai.upload_file(path=audio_path))
-        
+
         prompt = """
         From the dialogue in this audio file, please extract all movie titles you can find.
         List each movie title on a new line. Do not provide any extra explanation, just the titles.
         If no movie title is mentioned, return an empty response.
         """
-        
+
         response = await model.generate_content_async([prompt, audio_file])
-        
+
         if response.parts:
             titles = [title.strip() for title in response.parts[0].text.split('\n') if title.strip()]
             logger.info(f"Found titles from audio: {titles}")

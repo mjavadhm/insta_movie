@@ -20,10 +20,12 @@ DATABASE_URL = getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL not set in .env")
 
+# TMDB API Key
 TMDB_API_KEY = getenv("TMDB_API_KEY")
 if not TMDB_API_KEY:
     raise ValueError("TMDB_API_KEY not set in .env")
 
+# Movies channel ID
 MOVIES_CHANNEL_ID = getenv("MOVIES_CHANNEL_ID")
 if not MOVIES_CHANNEL_ID:
     raise ValueError("MOVIES_CHANNEL_ID not set in .env")
@@ -33,5 +35,7 @@ MOVIES_CHANNEL_ID = int(MOVIES_CHANNEL_ID)
 GEMINI_API_KEY = getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY not set in .env")
+
+# Instagram credentials
 INSTAGRAM_USERNAME = getenv("INSTAGRAM_USERNAME")
 INSTAGRAM_PASSWORD = getenv("INSTAGRAM_PASSWORD")

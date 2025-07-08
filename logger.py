@@ -14,17 +14,17 @@ console_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(m
 console_handler.setFormatter(console_format)
 logger.addHandler(console_handler)
 
-# Custom handler for sending errors to Telegram channel
+# Custom handler for sending errors to a Telegram channel
 class TelegramBotHandler(logging.Handler):
     def __init__(self, bot: Bot, channel_id: int):
         super().__init__()
         self.bot = bot
         self.channel_id = channel_id
-        
+
     def emit(self, record):
         log_entry = self.format(record)
         asyncio.create_task(self._send_log_entry(log_entry))
-        
+
     async def _send_log_entry(self, log_entry: str):
         try:
             await self.bot.send_message(
@@ -35,18 +35,18 @@ class TelegramBotHandler(logging.Handler):
             # Fallback to console if sending to Telegram fails
             print(f"Failed to send log to Telegram: {e}")
 
-# Initialize bot instance for logger
+# Initialize bot instance for the logger
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN must be set for logging")
 bot = Bot(token=BOT_TOKEN)
 
-# Add Telegram handler for ERROR level
+# Add Telegram handler for the ERROR level
 telegram_handler = TelegramBotHandler(bot, ERROR_CHANNEL_ID)
 telegram_handler.setLevel(logging.ERROR)
 telegram_format = logging.Formatter('%(levelname)s - %(asctime)s\n\n%(message)s')
 telegram_handler.setFormatter(telegram_format)
 logger.addHandler(telegram_handler)
 
-# Function to get logger
 def get_logger():
+    """Function to get the logger instance"""
     return logger

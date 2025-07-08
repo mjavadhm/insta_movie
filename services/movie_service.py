@@ -2,21 +2,21 @@ from datetime import datetime
 from typing import Dict, List
 import tmdbsimple as tmdb
 from sqlalchemy import select
-from sqlalchemy.sql.expression import func  # این خط را اضافه کنید
+from sqlalchemy.sql.expression import func
 from sqlalchemy.exc import IntegrityError
-
 from models import get_session
 from models.movie import Movie
 from models.person import Person
 from models.movie_cast import MovieCast
 from models.movie_crew import MovieCrew
 from config import TMDB_API_KEY
+from logger import get_logger
 
-# تنظیم کلید API
 tmdb.API_KEY = TMDB_API_KEY
 
 
 async def fetch_and_save_upcoming_movies(session, page=1, limit=None):
+    """Fetches upcoming movies from TMDb and saves them to the database."""
     movies_api = tmdb.Movies()
     response = movies_api.upcoming(page=page)
 
@@ -31,37 +31,32 @@ async def fetch_and_save_upcoming_movies(session, page=1, limit=None):
             if movie:
                 saved_movies.append(movie)
         except Exception as e:
-            print(f"❌ خطا در ذخیره فیلم {item['id']}: {e}")
+            print(f"❌ Error saving movie {item['id']}: {e}")
     return saved_movies
 
 
 async def search_movie_by_title(query: str) -> dict | None:
-    """
-    یک فیلم را بر اساس عنوان در TMDb جستجو می‌کند و اولین نتیجه را برمی‌گرداند.
-    """
+    """Searches for a movie by title on TMDb and returns the first result."""
     try:
         search = tmdb.Search()
         response = search.movie(query=query)
         if response['results']:
-            return response['results'][0]  # بازگرداندن اولین و محتمل‌ترین نتیجه
+            return response['results'][0]
         return None
     except Exception as e:
-        print(f"❌ خطا در جستجوی فیلم '{query}': {e}")
+        print(f"❌ Error searching for movie '{query}': {e}")
         return None
 
 
 async def fetch_and_save_movie(session, tmdb_id: int):
     """
-    1. اطلاعات فیلم و credits را از TMDb می‌گیرد
-    2. با save_movie_with_cast_and_crew در دیتابیس ذخیره می‌کند
+    Fetches movie details and credits from TMDb and saves them to the database.
     """
-    # بررسی اینکه آیا فیلم از قبل در دیتابیس وجود دارد یا نه
     result = await session.execute(select(Movie).where(Movie.tmdb_id == tmdb_id))
     if result.scalar_one_or_none():
-        print(f"ℹ️ فیلم با TMDB ID {tmdb_id} از قبل در دیتابیس وجود دارد.")
-        return None # اگر وجود داشت، نیازی به ذخیره مجدد نیست
+        print(f"ℹ️ Movie with TMDB ID {tmdb_id} already exists in the database.")
+        return None
 
-    # 1. فراخوانی اطلاعات پایه فیلم
     movie_api = tmdb.Movies(tmdb_id)
     info = movie_api.info()
     release_date_str = info.get("release_date")
@@ -70,7 +65,7 @@ async def fetch_and_save_movie(session, tmdb_id: int):
         try:
             release_date = datetime.strptime(release_date_str, "%Y-%m-%d").date()
         except ValueError:
-            pass # اگر فرمت تاریخ اشتباه بود، نادیده بگیر
+            pass
 
     movie_data = {
         "tmdb_id": tmdb_id,
@@ -84,20 +79,16 @@ async def fetch_and_save_movie(session, tmdb_id: int):
                       f"https://image.tmdb.org/t/p/original{info['poster_path']}"
     }
 
-    # 2. فراخوانی credits برای cast و crew
     credits = movie_api.credits()
     cast_list = credits.get("cast", [])
     crew_list = credits.get("crew", [])
 
-    # 3. ذخیره در دیتابیس
     movie = await save_movie_with_cast_and_crew(session, movie_data, cast_list, crew_list)
     return movie
 
 
 async def get_or_create_person(session, person_data):
-    """
-    بر اساس tmdb_id یک Person را یا پیدا می‌کند یا می‌سازد.
-    """
+    """Finds a person by tmdb_id or creates a new one."""
     result = await session.execute(
         select(Person).where(Person.tmdb_id == person_data["id"])
     )
@@ -117,10 +108,7 @@ async def get_or_create_person(session, person_data):
 
 
 async def save_movie_with_cast_and_crew(session, movie_data, cast_list, crew_list):
-    """
-    ذخیره فیلم به همراه بازیگران و عوامل در دیتابیس
-    """
-    # ساخت شیء Movie
+    """Saves a movie along with its cast and crew to the database."""
     movie = Movie(
         tmdb_id=movie_data["tmdb_id"],
         title=movie_data["title"],
@@ -132,9 +120,8 @@ async def save_movie_with_cast_and_crew(session, movie_data, cast_list, crew_lis
         poster_url=movie_data.get("poster_url"),
     )
     session.add(movie)
-    await session.flush()  # تا movie.id تولید بشه
+    await session.flush()
 
-    # اضافه کردن بازیگران
     for c in cast_list:
         person = await get_or_create_person(session, c)
         cast_entry = MovieCast(
@@ -145,7 +132,6 @@ async def save_movie_with_cast_and_crew(session, movie_data, cast_list, crew_lis
         )
         session.add(cast_entry)
 
-    # اضافه کردن عوامل
     for c in crew_list:
         person = await get_or_create_person(session, c)
         crew_entry = MovieCrew(
@@ -161,7 +147,6 @@ async def save_movie_with_cast_and_crew(session, movie_data, cast_list, crew_lis
         return movie
     except IntegrityError:
         await session.rollback()
-        # ممکن است فیلمی دیگر همزمان ذخیره شده باشد
         result = await session.execute(
             select(Movie).where(Movie.tmdb_id == movie_data["tmdb_id"])
         )
@@ -169,21 +154,20 @@ async def save_movie_with_cast_and_crew(session, movie_data, cast_list, crew_lis
 
 
 async def get_random_movie(session):
-    """
-    یک فیلم تصادفی از دیتابیس برمی‌گرداند.
-    """
+    """Returns a random movie from the database."""
     result = await session.execute(
         select(Movie).order_by(func.random()).limit(1)
     )
     return result.scalar_one_or_none()
 
+
 async def search_and_save_movies_from_titles(titles: List[str]) -> Dict[str, List[str]]:
     """
-     لیستی از عناوین فیلم را جستجو کرده، ذخیره می‌کند و خلاصه عملیات را برمی‌گرداند
+    Searches for a list of movie titles, saves them, and returns a summary of the operation.
     """
     saved_movies = []
     failed_titles = []
-    
+
     async for session in get_session():
         for title in titles:
             try:
@@ -193,12 +177,10 @@ async def search_and_save_movies_from_titles(titles: List[str]) -> Dict[str, Lis
                     continue
 
                 tmdb_id = search_result.get("id")
-                # ذخیره‌سازی فیلم (تابع fetch_and_save_movie خودش تکراری بودن را چک می‌کند)
                 movie = await fetch_and_save_movie(session, tmdb_id)
                 if movie:
                     saved_movies.append(movie.title)
                 else:
-                    # اگر فیلم از قبل وجود داشت، آن را هم جزو موفق‌ها حساب می‌کنیم
                     result = await session.execute(select(Movie.title).where(Movie.tmdb_id == tmdb_id))
                     existing_title = result.scalar_one_or_none()
                     if existing_title:
