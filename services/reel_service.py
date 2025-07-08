@@ -95,23 +95,23 @@ async def extract_movie_titles_from_audio(shortcode: str) -> List[str]:
             return []
 
         logger.info(f"Extracting audio from {video_path}")
-        audio_path = f"{video_path}.mp3"
+        # audio_path = f"{video_path}.mp3"
 
         loop = asyncio.get_event_loop()
-        video_clip = VideoFileClip(video_path)
-        await loop.run_in_executor(None, lambda: video_clip.audio.write_audiofile(audio_path, logger=None))
-        video_clip.close()
+        # video_clip = VideoFileClip(video_path)
+        # await loop.run_in_executor(None, lambda: video_clip.audio.write_audiofile(audio_path, logger=None))
+        # video_clip.close()
 
-        logger.info(f"Uploading audio file {audio_path} to Gemini...")
-        audio_file = await loop.run_in_executor(None, lambda: genai.upload_file(path=audio_path))
+        logger.info(f"Uploading audio file {video_path} to Gemini...")
+        video_file = await loop.run_in_executor(None, lambda: genai.upload_file(path=video_path))
 
         prompt = """
-        From the dialogue in this audio file, please extract all movie titles you can find.
+        From the video, please extract all movie titles you can find.
         List each movie title on a new line. Do not provide any extra explanation, just the titles.
         If no movie title is mentioned, return an empty response.
         """
 
-        response = await model.generate_content_async([prompt, audio_file])
+        response = await model.generate_content_async([prompt, video_file])
 
         if response.parts:
             titles = [title.strip() for title in response.parts[0].text.split('\n') if title.strip()]
@@ -125,6 +125,6 @@ async def extract_movie_titles_from_audio(shortcode: str) -> List[str]:
     finally:
         if video_path and os.path.exists(video_path):
             os.remove(video_path)
-        if audio_path and os.path.exists(audio_path):
-            os.remove(audio_path)
+        # if audio_path and os.path.exists(audio_path):
+        #     os.remove(audio_path)
         logger.info("Cleaned up temporary video and audio files.")
