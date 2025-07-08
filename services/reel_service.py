@@ -10,16 +10,8 @@ logger = get_logger()
 # --- بخش جدید برای لاگین در اینستاگرام ---
 
 # یک نمونه سراسری از Instaloader برای استفاده مجدد از جلسه ایجاد می‌کنیم
-L = instaloader.Instaloader(
-    error_messages=True,
-    save_metadata=False,
-    download_pictures=False,
-    download_videos=False,
-    download_video_thumbnails=False,
-    download_geotags=False,
-    download_comments=False,
-    compress_json=False,
-)
+# پارامترهای اضافی حذف شدند تا با نسخه شما سازگار باشد
+L = instaloader.Instaloader()
 
 # اگر اطلاعات کاربری موجود بود، تلاش برای لاگین
 if INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD:
