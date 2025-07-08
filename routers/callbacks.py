@@ -3,9 +3,9 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardBut
 from sqlalchemy import select, update
 from logger import get_logger
 from services.reel_service import download_instagram_video, extract_movie_titles_from_audio
-from services.movie_service import search_movie_by_title, fetch_and_save_movie # UPDATED: Imports
-from models import get_session # UPDATED: Imports
-from models.movie import Movie # UPDATED: Imports
+from services.movie_service import search_movie_by_title, fetch_and_save_movie
+from models import get_session
+from models.movie import Movie
 import os
 import uuid
 
@@ -45,8 +45,8 @@ async def add_to_database_callback(callback: CallbackQuery):
         await callback.answer()
         return
 
-    await callback.message.edit_text(f"⏳ در حال پردازش {len(titles)} فیلم. این عملیات ممکن است کمی طول بکشد...")
-    await callback.answer()
+    # Keep the original message and just show a status update
+    await callback.answer(f"⏳ در حال پردازش {len(titles)} فیلم...")
 
     async for session in get_session():
         for title in titles:
@@ -88,6 +88,7 @@ async def add_to_database_callback(callback: CallbackQuery):
                         )]
                     ])
 
+                    # Send each movie info as a new message
                     if movie_to_show.poster_url:
                         await callback.message.answer_photo(
                             photo=movie_to_show.poster_url,
@@ -106,13 +107,15 @@ async def add_to_database_callback(callback: CallbackQuery):
                 logger.error(f"Error processing and sending movie '{title}': {e}", exc_info=True)
                 await callback.message.answer(f"خطایی در پردازش فیلم '{title}' رخ داد.")
 
-    await callback.message.delete()
+    # The original message with buttons will no longer be deleted.
+    # await callback.message.delete() # <-- This line is removed
+
 
 @router.callback_query(F.data.startswith("audio_analyze_"))
 async def analyze_audio_callback(callback: CallbackQuery):
     """Handles the audio analysis button press."""
     shortcode = callback.data.replace("audio_analyze_", "")
-    await callback.message.edit_text("⏳ در حال تحلیل صدای ویدیو... این فرآیند ممکن است چند دقیقه طول بکشد. لطفاً صبور باشید.")
+    sent_m = await callback.message.answer("⏳ در حال تحلیل صدای ویدیو... این فرآیند ممکن است چند دقیقه طول بکشد. لطفاً صبور باشید.")
     await callback.answer()
 
     try:
@@ -121,38 +124,56 @@ async def analyze_audio_callback(callback: CallbackQuery):
         if titles:
             found_movies_text = "\n".join(f"• {title}" for title in titles)
             response_text = f"از تحلیل صدای این ویدیو، فیلم‌های زیر شناسایی شد:\n\n{found_movies_text}"
-            await callback.message.edit_text(response_text, reply_markup=None)
+            
+            # --- NEW: Create a callback ID and button to add to DB ---
+            callback_id = str(uuid.uuid4())
+            callback_movie_cache[callback_id] = titles
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="➕ اضافه کردن به دیتابیس",
+                        callback_data=f"add_to_db_{callback_id}"
+                    )
+                ]
+            ])
+            # --- END NEW ---
+
+            # Edit the message to show the results and the new button
+            await sent_m.edit_text(response_text, reply_markup=keyboard)
         else:
-            await callback.message.edit_text("❌ متاسفانه فیلمی در صدای این ویدیو پیدا نشد یا در تحلیل مشکلی رخ داد.")
+            await sent_m.edit_text("❌ متاسفانه فیلمی در صدای این ویدیو پیدا نشد یا در تحلیل مشکلی رخ داد.")
             
     except Exception as e:
         logger.error(f"Error in audio analysis callback for {shortcode}: {e}", exc_info=True)
-        await callback.message.edit_text("❌ خطایی غیرمنتظره در فرآیند تحلیل صدا رخ داد.")
+        await sent_m.edit_text("❌ خطایی غیرمنتظره در فرآیند تحلیل صدا رخ داد.")
         
 
 @router.callback_query(F.data.startswith("download_video_"))
 async def download_video_callback(callback: CallbackQuery):
     """Handles the download video button press using a shortcode."""
     shortcode = callback.data.replace("download_video_", "")
-    await callback.message.edit_text("⏳ در حال دانلود ویدیو، لطفاً صبر کنید...")
+    sent_m = await callback.message.answer("⏳ در حال دانلود ویدیو، لطفاً صبر کنید...")
     
     try:
         video_path = await download_instagram_video(shortcode)
         
         if video_path and os.path.exists(video_path):
             if os.path.getsize(video_path) > 50 * 1024 * 1024:
-                await callback.message.edit_text("❌ حجم ویدیو بیشتر از 50 مگابایت است.")
+                await sent_m.edit_text("❌ حجم ویدیو بیشتر از 50 مگابایت است.")
                 return
 
             video_file = FSInputFile(video_path)
+            # Send video as a new message
             await callback.message.answer_video(video=video_file, caption=f"Video from: `{shortcode}`")
+            # Delete the "downloading..." message
             await callback.message.delete()
         else:
-            await callback.message.edit_text("❌ متاسفانه دانلود ویدیو با مشکل مواجه شد.")
+            await sent_m.edit_text("❌ متاسفانه دانلود ویدیو با مشکل مواجه شد.")
             
     except Exception as e:
         logger.error(f"Error sending video {shortcode}: {e}", exc_info=True)
-        await callback.message.edit_text("❌ خطایی در ارسال ویدیو رخ داد.")
+        await sent_m.edit_text("❌ خطایی در ارسال ویدیو رخ داد.")
     finally:
         if 'video_path' in locals() and video_path and os.path.exists(video_path):
             os.remove(video_path)
