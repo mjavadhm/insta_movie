@@ -1,8 +1,7 @@
 import re
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from models import get_session
-from services.movie_service import search_movie_by_title, fetch_and_save_movie
+from services.movie_service import search_and_save_movies_from_titles
 from services.reel_service import get_post_caption, extract_movie_titles_from_caption
 from logger import get_logger
 
@@ -16,60 +15,58 @@ async def handle_text_message(message: Message):
     if not message.text:
         return
     text = message.text.strip()
-    if re.match(INSTAGRAM_POST_REGEX, text):
-        await handle_instagram_post_link(message)
+    match = re.search(INSTAGRAM_POST_REGEX, text)
+    if match:
+        await handle_instagram_post_link(message, match)
     else:
-        await process_movie_query(message, [text]) # Treat as a list with one item
+        # اگر لینک نبود، مثل قبل فقط همان یک فیلم را پردازش می‌کند
+        await message.reply(f"در حال جستجو برای «{text}»...")
+        result = await search_and_save_movies_from_titles([text])
+        
+        if result["saved"]:
+            await message.answer(f"✅ فیلم «{result['saved'][0]}» با موفقیت پیدا و ذخیره شد.")
+        else:
+            await message.answer(f"❌ فیلمی با عنوان «{text}» پیدا نشد.")
 
-async def handle_instagram_post_link(message: Message):
+async def handle_instagram_post_link(message: Message, match: re.Match):
+    """
+    یک پیام واحد با دکمه‌های عملیاتی برای لینک اینستاگرام ارسال می‌کند
+    """
     post_url = message.text.strip()
+    shortcode = match.group(1)
+    
     await message.reply("در حال پردازش لینک...")
     caption = await get_post_caption(post_url)
     if not caption:
         await message.reply("خطا در دریافت کپشن.")
         return
 
-    await message.reply("کپشن دریافت شد. در حال استخراج نام فیلم‌ها...")
     movie_titles = await extract_movie_titles_from_caption(caption)
     if not movie_titles:
         await message.reply("نام فیلمی در کپشن پیدا نشد.")
         return
+
+    # ساخت پیام اصلی
+    found_movies_text = "\n".join(f"• {title}" for title in movie_titles)
+    response_text = f"از کپشن این پست، فیلم‌های زیر پیدا شد:\n\n{found_movies_text}"
     
-    await message.reply(f"پیدا شد: {', '.join(movie_titles)}. در حال جستجو و ذخیره...")
-    await process_movie_query(message, movie_titles)
-
-async def process_movie_query(message: Message, movie_titles: list):
-    """Searches for and saves a list of movies."""
-    for title in movie_titles:
-        try:
-            search_result = await search_movie_by_title(title)
-            if not search_result:
-                await message.reply(f"❌ فیلمی با عنوان «{title}» پیدا نشد.")
-                continue
-
-            tmdb_id = search_result.get("id")
-            found_title = search_result.get("title")
-            
-            async for session in get_session():
-                saved_movie = await fetch_and_save_movie(session, tmdb_id)
-                
-                response_text = ""
-                if saved_movie:
-                    logger.info(f"فیلم '{saved_movie.title}' ذخیره شد.")
-                    response_text = f"🎉 فیلم «{saved_movie.title}» با موفقیت ذخیره شد!"
-                else:
-                    logger.info(f"فیلم '{found_title}' از قبل موجود بود.")
-                    response_text = f"✅ فیلم «{found_title}» از قبل در دیتابیس وجود داشت."
-
-                # Add a button to add to watchlist
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(
-                        text="➕ افزودن به لیست تماشا", 
-                        callback_data=f"watchlist_add_{tmdb_id}"
-                    )]
-                ])
-                await message.reply(response_text, reply_markup=keyboard)
-
-        except Exception as e:
-            logger.error(f"Error processing query '{title}': {e}", exc_info=True)
-            await message.reply(f"😥 مشکلی در پردازش «{title}» پیش آمد.")
+    # ساخت دکمه‌ها
+    # برای دکمه "افزودن همه"، عناوین را با یک جداکننده خاص به هم می‌چسبانیم
+    titles_payload = "|||".join(movie_titles)
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="➕ افزودن همه به لیست تماشا",
+                callback_data=f"add_all_{titles_payload}"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="📥 دانلود ویدیو اینستاگرام",
+                callback_data=f"download_video_{shortcode}"
+            )
+        ]
+    ])
+    
+    await message.answer(response_text, reply_markup=keyboard)

@@ -3,13 +3,13 @@ import re
 import google.generativeai as genai
 from config import GEMINI_API_KEY, INSTAGRAM_USERNAME
 from logger import get_logger
-from typing import List
+from typing import List, Optional
 import os
+from pathlib import Path
 
 logger = get_logger()
 L = instaloader.Instaloader()
 
-# --- MODIFIED LOGIN LOGIC ---
 SESSION_FILE = f"./{INSTAGRAM_USERNAME}"
 
 if INSTAGRAM_USERNAME and os.path.exists(SESSION_FILE):
@@ -23,19 +23,16 @@ else:
     logger.warning("⚠️ Instagram username not set or session file not found.")
     logger.warning("The bot will run unauthenticated and may be unstable.")
 
-# --- END OF MODIFIED LOGIC ---
-
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.5-flash')
 
 SHORTCODE_REGEX = r"(?:https?:\/\/)?(?:www\.)?instagram\.com\/(?:p|reel|tv)\/([a-zA-Z0-9_-]+)"
 
-async def get_post_caption(post_url: str) -> str | None:
+async def get_post_caption(post_url: str) -> Optional[str]:
     """Downloads the caption of an Instagram Post."""
     try:
         match = re.search(SHORTCODE_REGEX, post_url)
         if not match:
-            logger.error(f"Could not find shortcode in URL: {post_url}")
             return None
         
         shortcode = match.group(1)
@@ -43,6 +40,30 @@ async def get_post_caption(post_url: str) -> str | None:
         return post.caption
     except Exception as e:
         logger.error(f"Error fetching post caption for {post_url}: {e}")
+        return None
+
+async def download_instagram_video(shortcode: str) -> Optional[str]:
+    """Downloads an Instagram video and returns the file path."""
+    try:
+        logger.info(f"Downloading video for shortcode: {shortcode}")
+        post = instaloader.Post.from_shortcode(L.context, shortcode)
+        
+        # Create a temporary directory for downloads
+        download_dir = Path("downloads")
+        download_dir.mkdir(exist_ok=True)
+        
+        # Download the post
+        L.download_post(post, target=download_dir)
+        
+        # Find the downloaded video file
+        for file in download_dir.iterdir():
+            if file.suffix == '.mp4' and shortcode in file.name:
+                logger.info(f"Video downloaded successfully: {file}")
+                return str(file)
+        
+        return None
+    except Exception as e:
+        logger.error(f"Error downloading video {shortcode}: {e}", exc_info=True)
         return None
 
 async def extract_movie_titles_from_caption(caption: str) -> List[str]:

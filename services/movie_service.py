@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.sql.expression import func  # این خط را اضافه کنید
 from sqlalchemy.exc import IntegrityError
 
+from models import get_session
 from models.movie import Movie
 from models.person import Person
 from models.movie_cast import MovieCast
@@ -174,3 +175,36 @@ async def get_random_movie(session):
         select(Movie).order_by(func.random()).limit(1)
     )
     return result.scalar_one_or_none()
+
+async def search_and_save_movies_from_titles(titles: List[str]) -> Dict[str, List[str]]:
+    """
+     لیستی از عناوین فیلم را جستجو کرده، ذخیره می‌کند و خلاصه عملیات را برمی‌گرداند
+    """
+    saved_movies = []
+    failed_titles = []
+    
+    async for session in get_session():
+        for title in titles:
+            try:
+                search_result = await search_movie_by_title(title)
+                if not search_result:
+                    failed_titles.append(title)
+                    continue
+
+                tmdb_id = search_result.get("id")
+                # ذخیره‌سازی فیلم (تابع fetch_and_save_movie خودش تکراری بودن را چک می‌کند)
+                movie = await fetch_and_save_movie(session, tmdb_id)
+                if movie:
+                    saved_movies.append(movie.title)
+                else:
+                    # اگر فیلم از قبل وجود داشت، آن را هم جزو موفق‌ها حساب می‌کنیم
+                    result = await session.execute(select(Movie.title).where(Movie.tmdb_id == tmdb_id))
+                    existing_title = result.scalar_one_or_none()
+                    if existing_title:
+                        saved_movies.append(existing_title)
+
+            except Exception as e:
+                get_logger().error(f"Error processing title '{title}': {e}")
+                failed_titles.append(title)
+
+    return {"saved": saved_movies, "failed": failed_titles}
