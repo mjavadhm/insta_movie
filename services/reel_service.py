@@ -1,69 +1,71 @@
-import instaloader
-import re
+from instagrapi import Client
+from instagrapi.exceptions import LoginRequired
 import google.generativeai as genai
-from config import GEMINI_API_KEY, INSTAGRAM_USERNAME
+from config import GEMINI_API_KEY, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD
 from logger import get_logger
 from typing import List, Optional
 import os
 from pathlib import Path
 
 logger = get_logger()
-L = instaloader.Instaloader()
 
-SESSION_FILE = f"./{INSTAGRAM_USERNAME}"
+# --- New instagrapi Client Setup ---
+cl = Client()
 
-if INSTAGRAM_USERNAME and os.path.exists(SESSION_FILE):
-    logger.info(f"Attempting to load session from file: {SESSION_FILE}")
-    try:
-        L.load_session_from_file(INSTAGRAM_USERNAME, SESSION_FILE)
-        logger.info("✅ Instagram session loaded successfully from file.")
-    except Exception as e:
-        logger.error(f"❌ Could not load session from file: {e}. Please regenerate the session file.")
-else:
-    logger.warning("⚠️ Instagram username not set or session file not found.")
-    logger.warning("The bot will run unauthenticated and may be unstable.")
+SESSION_FILE = f"./instagrapi_session.json"
+
+try:
+    if os.path.exists(SESSION_FILE):
+        cl.load_settings(SESSION_FILE)
+        logger.info("✅ instagrapi session loaded successfully from file.")
+        # Optional: Check if the session is still valid
+        cl.get_timeline_feed()
+    else:
+        logger.info("Session file not found, logging in with username and password.")
+        cl.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
+        cl.dump_settings(SESSION_FILE)
+        logger.info("✅ Logged in and saved instagrapi session to file.")
+
+except LoginRequired:
+    logger.warning("Session has expired. Re-logging in...")
+    cl.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
+    cl.dump_settings(SESSION_FILE)
+    logger.info("✅ Re-logged in and saved new instagrapi session to file.")
+
+except Exception as e:
+    logger.error(f"❌ An unexpected error occurred during Instagram client setup: {e}")
+
+# --- End of New Setup ---
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.5-flash')
 
-SHORTCODE_REGEX = r"(?:https?:\/\/)?(?:www\.)?instagram\.com\/(?:p|reel|tv)\/([a-zA-Z0-9_-]+)"
-
 async def get_post_caption(post_url: str) -> Optional[str]:
-    """Downloads the caption of an Instagram Post."""
+    """Downloads the caption of an Instagram Post using instagrapi."""
     try:
-        match = re.search(SHORTCODE_REGEX, post_url)
-        if not match:
-            return None
-        
-        shortcode = match.group(1)
-        post = instaloader.Post.from_shortcode(L.context, shortcode)
-        return post.caption
+        media_pk = cl.media_pk_from_url(post_url)
+        media_info = cl.media_info(media_pk)
+        return media_info.caption_text
     except Exception as e:
         logger.error(f"Error fetching post caption for {post_url}: {e}")
         return None
 
-async def download_instagram_video(shortcode: str) -> Optional[str]:
-    """Downloads an Instagram video and returns the file path."""
+async def download_instagram_video(post_url: str) -> Optional[str]:
+    """Downloads an Instagram video using instagrapi and returns the file path."""
     try:
-        logger.info(f"Downloading video for shortcode: {shortcode}")
-        post = instaloader.Post.from_shortcode(L.context, shortcode)
+        logger.info(f"Downloading video for URL: {post_url}")
         
         # Create a temporary directory for downloads
         download_dir = Path("downloads")
         download_dir.mkdir(exist_ok=True)
+
+        media_pk = cl.media_pk_from_url(post_url)
+        video_path = cl.video_download(media_pk, folder=download_dir)
         
-        # Download the post
-        L.download_post(post, target=download_dir)
-        
-        # Find the downloaded video file
-        for file in download_dir.iterdir():
-            if file.suffix == '.mp4' and shortcode in file.name:
-                logger.info(f"Video downloaded successfully: {file}")
-                return str(file)
-        
-        return None
+        logger.info(f"Video downloaded successfully: {video_path}")
+        return str(video_path)
     except Exception as e:
-        logger.error(f"Error downloading video {shortcode}: {e}", exc_info=True)
+        logger.error(f"Error downloading video from {post_url}: {e}", exc_info=True)
         return None
 
 async def extract_movie_titles_from_caption(caption: str) -> List[str]:

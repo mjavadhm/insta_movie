@@ -37,28 +37,32 @@ async def add_all_to_watchlist_callback(callback: CallbackQuery):
     await callback.message.edit_text(summary_text, reply_markup=None) # حذف دکمه‌ها
     await callback.answer()
 
-# (بقیه کدهای فایل callbacks.py بدون تغییر باقی می‌مانند)
 @router.callback_query(F.data.startswith("download_video_"))
 async def download_video_callback(callback: CallbackQuery):
     """Handles the download video button press."""
-    shortcode = callback.data.replace("download_video_", "")
+    # The callback_data will now contain the FULL URL
+    post_url = callback.data.replace("download_video_", "")
+    
     await callback.message.edit_text("⏳ در حال دانلود ویدیو، لطفاً صبر کنید...")
+    
     try:
-        video_path = await download_instagram_video(shortcode)
+        # Pass the full URL to the download function
+        video_path = await download_instagram_video(post_url)
+        
         if video_path and os.path.exists(video_path):
             if os.path.getsize(video_path) > 50 * 1024 * 1024:
                 await callback.message.edit_text("❌ حجم ویدیو بیشتر از 50 مگابایت است.")
                 return
+
             video_file = FSInputFile(video_path)
-            await callback.message.answer_video(video=video_file, caption=f"Video from: `{shortcode}`")
+            await callback.message.answer_video(video=video_file)
             await callback.message.delete()
         else:
-            await callback.message.edit_text("❌ دانلود ویدیو با مشکل مواجه شد.")
+            await callback.message.edit_text("❌ متاسفانه دانلود ویدیو با مشکل مواجه شد.")
+            
     except Exception as e:
-        logger.error(f"Error sending video {shortcode}: {e}", exc_info=True)
+        logger.error(f"Error sending video: {e}", exc_info=True)
         await callback.message.edit_text("❌ خطایی در ارسال ویدیو رخ داد.")
     finally:
         if 'video_path' in locals() and video_path and os.path.exists(video_path):
             os.remove(video_path)
-
-# (کدهای مربوط به watchlist_add_, watchlist_remove_ و already_in_watchlist هم بدون تغییر باقی می‌مانند)

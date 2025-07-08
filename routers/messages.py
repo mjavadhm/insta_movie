@@ -30,10 +30,9 @@ async def handle_text_message(message: Message):
 
 async def handle_instagram_post_link(message: Message, match: re.Match):
     """
-    یک پیام واحد با دکمه‌های عملیاتی برای لینک اینستاگرام ارسال می‌کند
+    Handles Instagram post links with the new instagrapi logic.
     """
     post_url = message.text.strip()
-    shortcode = match.group(1)
     
     await message.reply("در حال پردازش لینک...")
     caption = await get_post_caption(post_url)
@@ -46,12 +45,9 @@ async def handle_instagram_post_link(message: Message, match: re.Match):
         await message.reply("نام فیلمی در کپشن پیدا نشد.")
         return
 
-    # ساخت پیام اصلی
     found_movies_text = "\n".join(f"• {title}" for title in movie_titles)
     response_text = f"از کپشن این پست، فیلم‌های زیر پیدا شد:\n\n{found_movies_text}"
     
-    # ساخت دکمه‌ها
-    # برای دکمه "افزودن همه"، عناوین را با یک جداکننده خاص به هم می‌چسبانیم
     titles_payload = "|||".join(movie_titles)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -64,7 +60,8 @@ async def handle_instagram_post_link(message: Message, match: re.Match):
         [
             InlineKeyboardButton(
                 text="📥 دانلود ویدیو اینستاگرام",
-                callback_data=f"download_video_{shortcode}"
+                # Pass the full URL in the callback data
+                callback_data=f"download_video_{post_url}"
             )
         ]
     ])
