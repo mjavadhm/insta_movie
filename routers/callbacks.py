@@ -105,10 +105,10 @@ async def add_to_database_callback(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("video_analyze_"))
-async def analyze_audio_callback(callback: CallbackQuery):
-    """Handles the audio analysis button press."""
-    shortcode = callback.data.replace("audio_analyze_", "")
-    sent_m = await callback.message.answer("⏳ Analyzing video audio... This may take a few minutes. Please be patient.")
+async def analyze_video_callback(callback: CallbackQuery):
+    """Handles the video analysis button press."""
+    shortcode = callback.data.replace("video_analyze_", "")
+    sent_m = await callback.message.answer("⏳ Analyzing video... This may take a few minutes. Please be patient.")
     await callback.answer()
 
     try:
@@ -131,11 +131,11 @@ async def analyze_audio_callback(callback: CallbackQuery):
             ])
             await sent_m.edit_text(response_text, reply_markup=keyboard)
         else:
-            await sent_m.edit_text("❌ Unfortunately, no movie was found in the video's audio, or an error occurred during analysis.")
+            await sent_m.edit_text("❌ Unfortunately, no movie was found in the video, or an error occurred during analysis.")
 
     except Exception as e:
-        logger.error(f"Error in audio analysis callback for {shortcode}: {e}", exc_info=True)
-        await sent_m.edit_text("❌ An unexpected error occurred during the audio analysis process.")
+        logger.error(f"Error in video analysis callback for {shortcode}: {e}", exc_info=True)
+        await sent_m.edit_text("❌ An unexpected error occurred during the video analysis process.")
 
 
 @router.callback_query(F.data.startswith("download_video_"))
