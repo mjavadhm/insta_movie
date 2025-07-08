@@ -1,9 +1,11 @@
 import re
+import uuid
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from services.movie_service import search_and_save_movies_from_titles
 from services.reel_service import get_post_caption, extract_movie_titles_from_caption
 from logger import get_logger
+from .callbacks import callback_movie_cache # Import the cache
 
 router = Router(name="messages")
 logger = get_logger()
@@ -19,7 +21,6 @@ async def handle_text_message(message: Message):
     if match:
         await handle_instagram_post_link(message, match)
     else:
-        # اگر لینک نبود، مثل قبل فقط همان یک فیلم را پردازش می‌کند
         await message.reply(f"در حال جستجو برای «{text}»...")
         result = await search_and_save_movies_from_titles([text])
         
@@ -30,12 +31,12 @@ async def handle_text_message(message: Message):
 
 async def handle_instagram_post_link(message: Message, match: re.Match):
     """
-    Handles Instagram post links with the new instagrapi logic.
+    Creates a single message with action buttons using short, unique identifiers.
     """
-    post_url = message.text.strip()
+    shortcode = match.group(1)
     
     await message.reply("در حال پردازش لینک...")
-    caption = await get_post_caption(post_url)
+    caption = await get_post_caption(shortcode) # Pass shortcode directly
     if not caption:
         await message.reply("خطا در دریافت کپشن.")
         return
@@ -48,20 +49,25 @@ async def handle_instagram_post_link(message: Message, match: re.Match):
     found_movies_text = "\n".join(f"• {title}" for title in movie_titles)
     response_text = f"از کپشن این پست، فیلم‌های زیر پیدا شد:\n\n{found_movies_text}"
     
-    titles_payload = "|||".join(movie_titles)
+    # --- Create short and safe callback data ---
+    
+    # 1. For adding movies
+    callback_id = str(uuid.uuid4())
+    callback_movie_cache[callback_id] = movie_titles
+
+    # 2. For downloading video (the shortcode is already short)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
                 text="➕ افزودن همه به لیست تماشا",
-                callback_data=f"add_all_{titles_payload}"
+                callback_data=f"add_all_{callback_id}" # Use the short unique ID
             )
         ],
         [
             InlineKeyboardButton(
                 text="📥 دانلود ویدیو اینستاگرام",
-                # Pass the full URL in the callback data
-                callback_data=f"download_video_{post_url}"
+                callback_data=f"download_video_{shortcode}" # Use the shortcode
             )
         ]
     ])
