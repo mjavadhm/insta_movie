@@ -60,8 +60,8 @@ async def handle_instagram_post_link(message: Message, match: re.Match):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text="➕ افزودن همه به لیست تماشا",
-                callback_data=f"add_all_{callback_id}" # Use the short unique ID
+                text="➕ اضافه کردن به دیتابیس",
+                callback_data=f"add_to_db_{callback_id}" # UPDATED: Changed callback data
             )
         ],
         [

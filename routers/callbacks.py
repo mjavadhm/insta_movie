@@ -3,7 +3,9 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardBut
 from sqlalchemy import select, update
 from logger import get_logger
 from services.reel_service import download_instagram_video
-from services.movie_service import search_and_save_movies_from_titles
+from services.movie_service import search_movie_by_title, fetch_and_save_movie # UPDATED: Imports
+from models import get_session # UPDATED: Imports
+from models.movie import Movie # UPDATED: Imports
 import os
 import uuid
 
@@ -14,35 +16,98 @@ logger = get_logger()
 # { "unique_id": ["Movie 1", "Movie 2"] }
 callback_movie_cache = {}
 
-@router.callback_query(F.data.startswith("add_all_"))
-async def add_all_to_watchlist_callback(callback: CallbackQuery):
+# Helper function to format movie info text
+def _format_movie_text_for_user(movie: Movie) -> str:
+    text = f"🎬 <b>{movie.title}</b>\n\n"
+    if movie.release_date:
+        text += f"📅 <b>تاریخ انتشار:</b> {movie.release_date.strftime('%Y-%m-%d')}\n"
+    if movie.vote_average:
+        text += f"⭐ <b>امتیاز:</b> {movie.vote_average}/10\n"
+    if movie.genres:
+        text += f"🎭 <b>ژانرها:</b> {', '.join(movie.genres)}\n"
+    if movie.overview:
+        overview = movie.overview[:300] + "..." if len(movie.overview) > 300 else movie.overview
+        text += f"\n📝 <b>خلاصه:</b>\n{overview}\n"
+    return text
+
+
+@router.callback_query(F.data.startswith("add_to_db_"))
+async def add_to_database_callback(callback: CallbackQuery):
     """
-    Retrieves a list of movie titles from the cache using a unique ID and saves them.
+    Retrieves movie titles from cache, saves them one by one,
+    and sends a confirmation message with a watchlist button for each.
     """
-    callback_id = callback.data.replace("add_all_", "")
+    callback_id = callback.data.replace("add_to_db_", "")
     titles = callback_movie_cache.pop(callback_id, None)
 
     if not titles:
         await callback.message.edit_text("❌ این درخواست منقضی شده یا مشکلی پیش آمده است. لطفاً لینک را دوباره ارسال کنید.")
         await callback.answer()
         return
-        
-    await callback.message.edit_text("⏳ در حال پردازش و افزودن فیلم‌ها به لیست تماشا...")
-    
-    result = await search_and_save_movies_from_titles(titles)
-    
-    saved_count = len(result["saved"])
-    failed_count = len(result["failed"])
-    
-    summary_text = f"عملیات انجام شد:\n\n"
-    if saved_count > 0:
-        summary_text += f"✅ {saved_count} فیلم با موفقیت به لیست تماشا اضافه شد.\n"
-    if failed_count > 0:
-        failed_list = "\n".join(f"- {title}" for title in result["failed"])
-        summary_text += f"❌ {failed_count} فیلم پیدا نشد:\n{failed_list}"
-        
-    await callback.message.edit_text(summary_text, reply_markup=None)
+
+    await callback.message.edit_text(f"⏳ در حال پردازش {len(titles)} فیلم. این عملیات ممکن است کمی طول بکشد...")
     await callback.answer()
+
+    async for session in get_session():
+        for title in titles:
+            status_message = ""
+            movie_to_show = None
+            
+            try:
+                search_result = await search_movie_by_title(title)
+                if not search_result:
+                    await callback.message.answer(f"❌ فیلمی با عنوان «{title}» پیدا نشد.")
+                    continue
+
+                tmdb_id = search_result.get("id")
+                
+                result = await session.execute(select(Movie).where(Movie.tmdb_id == tmdb_id))
+                existing_movie = result.scalar_one_or_none()
+
+                if existing_movie:
+                    status_message = f"ℹ️ فیلم «{existing_movie.title}» از قبل در دیتابیس وجود داشت."
+                    movie_to_show = existing_movie
+                else:
+                    new_movie = await fetch_and_save_movie(session, tmdb_id)
+                    if new_movie:
+                        status_message = f"✅ فیلم «{new_movie.title}» با موفقیت به دیتابیس اضافه شد."
+                        movie_to_show = new_movie
+                    else:
+                        # Handle race condition or other errors
+                        await callback.message.answer(f"❌ خطایی در ذخیره‌سازی فیلم «{title}» رخ داد.")
+                        continue
+                
+                if movie_to_show:
+                    info_caption = _format_movie_text_for_user(movie_to_show)
+                    full_caption = f"{status_message}\n\n{info_caption}"
+                    
+                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(
+                            text="➕ افزودن به لیست تماشا",
+                            callback_data=f"watchlist_add_{movie_to_show.tmdb_id}"
+                        )]
+                    ])
+
+                    if movie_to_show.poster_url:
+                        await callback.message.answer_photo(
+                            photo=movie_to_show.poster_url,
+                            caption=full_caption,
+                            reply_markup=keyboard,
+                            parse_mode="HTML"
+                        )
+                    else:
+                        await callback.message.answer(
+                            text=full_caption,
+                            reply_markup=keyboard,
+                            parse_mode="HTML"
+                        )
+
+            except Exception as e:
+                logger.error(f"Error processing and sending movie '{title}': {e}", exc_info=True)
+                await callback.message.answer(f"خطایی در پردازش فیلم '{title}' رخ داد.")
+
+    await callback.message.delete()
+
 
 @router.callback_query(F.data.startswith("download_video_"))
 async def download_video_callback(callback: CallbackQuery):
@@ -51,7 +116,6 @@ async def download_video_callback(callback: CallbackQuery):
     await callback.message.edit_text("⏳ در حال دانلود ویدیو، لطفاً صبر کنید...")
     
     try:
-        # The service function now correctly accepts a shortcode
         video_path = await download_instagram_video(shortcode)
         
         if video_path and os.path.exists(video_path):
@@ -72,7 +136,6 @@ async def download_video_callback(callback: CallbackQuery):
         if 'video_path' in locals() and video_path and os.path.exists(video_path):
             os.remove(video_path)
 
-# --- The rest of the file remains the same ---
 
 @router.callback_query(F.data.startswith("watchlist_add_"))
 async def add_to_watchlist_callback(callback: CallbackQuery):
@@ -100,6 +163,7 @@ async def add_to_watchlist_callback(callback: CallbackQuery):
         logger.error(f"Error adding to watchlist: {e}", exc_info=True)
         await callback.answer("❌ خطایی رخ داد.", show_alert=True)
 
+
 @router.callback_query(F.data.startswith("watchlist_remove_"))
 async def remove_from_watchlist_callback(callback: CallbackQuery):
     """Removes a movie from the user's watchlist."""
@@ -117,6 +181,7 @@ async def remove_from_watchlist_callback(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Error removing from watchlist: {e}", exc_info=True)
         await callback.answer("❌ خطایی رخ داد.", show_alert=True)
+
 
 @router.callback_query(F.data == "already_in_watchlist")
 async def already_in_watchlist_callback(callback: CallbackQuery):
