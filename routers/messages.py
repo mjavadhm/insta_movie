@@ -45,11 +45,12 @@ async def handle_instagram_post_link(message: Message, match: re.Match):
 
     movie_titles = await extract_movie_titles_from_caption(caption)
     if not movie_titles:
-        await message.reply("نام فیلمی در کپشن پیدا نشد.")
-        return
+        response_text = "نام فیلمی در کپشن پیدا نشد."
+        
 
-    found_movies_text = "\n".join(f"• {title}" for title in movie_titles)
-    response_text = f"از کپشن این پست، فیلم‌های زیر پیدا شد:\n\n{found_movies_text}"
+    else:
+        found_movies_text = "\n".join(f"• {title}" for title in movie_titles)
+        response_text = f"از کپشن این پست، فیلم‌های زیر پیدا شد:\n\n{found_movies_text}"
     
     callback_id = str(uuid.uuid4())
     callback_movie_cache[callback_id] = movie_titles
