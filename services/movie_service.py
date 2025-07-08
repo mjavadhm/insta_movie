@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Dict, List
 import tmdbsimple as tmdb
 from sqlalchemy import select
 from sqlalchemy.sql.expression import func  # این خط را اضافه کنید
