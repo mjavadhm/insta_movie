@@ -8,7 +8,8 @@ from logger import get_logger
 from typing import List, Optional
 import os
 from pathlib import Path
-import moviepy.editor as mp
+from moviepy.video.io.VideoFileClip import VideoFileClip
+
 import asyncio
 
 logger = get_logger()
@@ -103,7 +104,9 @@ async def extract_movie_titles_from_audio(shortcode: str) -> List[str]:
         audio_path = f"{video_path}.mp3"
         
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: mp.VideoFileClip(video_path).audio.write_audiofile(audio_path, logger=None))
+        video_clip = VideoFileClip(video_path)
+        await loop.run_in_executor(None, lambda: video_clip.audio.write_audiofile(audio_path, logger=None))
+        video_clip.close() # Close the clip
         
         logger.info(f"Uploading audio file {audio_path} to Gemini...")
         audio_file = await loop.run_in_executor(None, lambda: genai.upload_file(path=audio_path))
