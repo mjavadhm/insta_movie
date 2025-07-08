@@ -117,6 +117,7 @@ async def extract_movie_titles_from_video(shortcode: str) -> list[str]:
 
         prompt = """
         From the video, please extract all movie titles you can find.
+        If theres None please try to found the movie or movies that are in the video.
         List each movie title on a new line. Do not provide any extra explanation, just the titles.
         If no movie title is mentioned, return an empty response.
         """

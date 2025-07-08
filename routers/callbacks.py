@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from sqlalchemy import select, update
 from logger import get_logger
-from services.reel_service import download_instagram_video, extract_movie_titles_from_audio
+from services.reel_service import download_instagram_video, extract_movie_titles_from_video
 from services.movie_service import search_movie_by_title, fetch_and_save_movie
 from models import get_session
 from models.movie import Movie
@@ -112,7 +112,7 @@ async def analyze_audio_callback(callback: CallbackQuery):
     await callback.answer()
 
     try:
-        titles = await extract_movie_titles_from_audio(shortcode)
+        titles = await extract_movie_titles_from_video(shortcode)
 
         if titles:
             found_movies_text = "\n".join(f"• {title}" for title in titles)
