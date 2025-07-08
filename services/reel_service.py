@@ -1,45 +1,33 @@
 import instaloader
 import re
 import google.generativeai as genai
-from config import GEMINI_API_KEY, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD
+from config import GEMINI_API_KEY, INSTAGRAM_USERNAME
 from logger import get_logger
 from typing import List
+import os
 
 logger = get_logger()
-
-# --- بخش جدید برای لاگین در اینستاگرام ---
-
-# یک نمونه سراسری از Instaloader برای استفاده مجدد از جلسه ایجاد می‌کنیم
-# پارامترهای اضافی حذف شدند تا با نسخه شما سازگار باشد
 L = instaloader.Instaloader()
 
-# اگر اطلاعات کاربری موجود بود، تلاش برای لاگین
-if INSTAGRAM_USERNAME and INSTAGRAM_PASSWORD:
-    logger.info(f"در حال تلاش برای ورود به اینستاگرام با نام کاربری: {INSTAGRAM_USERNAME}")
+# --- MODIFIED LOGIN LOGIC ---
+SESSION_FILE = f"./{INSTAGRAM_USERNAME}"
+
+if INSTAGRAM_USERNAME and os.path.exists(SESSION_FILE):
+    logger.info(f"Attempting to load session from file: {SESSION_FILE}")
     try:
-        # تلاش برای بارگذاری جلسه از فایل برای جلوگیری از لاگین مکرر
-        L.load_session_from_file(INSTAGRAM_USERNAME)
-        logger.info("جلسه اینستاگرام با موفقیت از فایل بارگذاری شد.")
-    except FileNotFoundError:
-        # اگر فایل جلسه وجود نداشت، لاگین کرده و جلسه را ذخیره می‌کنیم
-        try:
-            L.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
-            L.save_session_to_file(INSTAGRAM_USERNAME)
-            logger.info("لاگین موفقیت‌آمیز بود و جلسه اینستاگرام ذخیره شد.")
-        except Exception as e:
-            logger.error(f"خطا در هنگام لاگین به اینستاگرام: {e}")
+        L.load_session_from_file(INSTAGRAM_USERNAME, SESSION_FILE)
+        logger.info("✅ Instagram session loaded successfully from file.")
     except Exception as e:
-        logger.error(f"خطا در بارگذاری جلسه اینستاگرام: {e}")
+        logger.error(f"❌ Could not load session from file: {e}. Please regenerate the session file.")
 else:
-    logger.warning("اطلاعات کاربری اینستاگرام ارائه نشده است. ربات در حالت ناشناس اجرا می‌شود که ممکن است ناپایدار باشد.")
+    logger.warning("⚠️ Instagram username not set or session file not found.")
+    logger.warning("The bot will run unauthenticated and may be unstable.")
 
-# --- پایان بخش جدید ---
+# --- END OF MODIFIED LOGIC ---
 
-# Configure the generative AI model
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-pro')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
-# Regex to extract shortcode from any Instagram URL
 SHORTCODE_REGEX = r"(?:https?:\/\/)?(?:www\.)?instagram\.com\/(?:p|reel|tv)\/([a-zA-Z0-9_-]+)"
 
 async def get_post_caption(post_url: str) -> str | None:
@@ -51,7 +39,6 @@ async def get_post_caption(post_url: str) -> str | None:
             return None
         
         shortcode = match.group(1)
-        # از نمونه لاگین‌شده و سراسری Instaloader استفاده می‌کنیم
         post = instaloader.Post.from_shortcode(L.context, shortcode)
         return post.caption
     except Exception as e:
@@ -75,7 +62,6 @@ async def extract_movie_titles_from_caption(caption: str) -> List[str]:
         response = await model.generate_content_async(prompt)
         
         if response.parts:
-            # Split the text by newlines and clean up each title
             titles = [title.strip() for title in response.parts[0].text.split('\n') if title.strip()]
             return titles
         return []
