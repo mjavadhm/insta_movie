@@ -1,7 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from sqlalchemy import select, update
-from models import get_session, Movie
 from logger import get_logger
 from services.reel_service import download_instagram_video
 from services.movie_service import search_and_save_movies_from_titles # ایمپورت جدید
