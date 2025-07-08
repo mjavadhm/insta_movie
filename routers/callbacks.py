@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from sqlalchemy import select, update
 from logger import get_logger
-from services.reel_service import download_instagram_video
+from services.reel_service import download_instagram_video, extract_movie_titles_from_audio
 from services.movie_service import search_movie_by_title, fetch_and_save_movie # UPDATED: Imports
 from models import get_session # UPDATED: Imports
 from models.movie import Movie # UPDATED: Imports
@@ -108,6 +108,27 @@ async def add_to_database_callback(callback: CallbackQuery):
 
     await callback.message.delete()
 
+@router.callback_query(F.data.startswith("audio_analyze_"))
+async def analyze_audio_callback(callback: CallbackQuery):
+    """Handles the audio analysis button press."""
+    shortcode = callback.data.replace("audio_analyze_", "")
+    await callback.message.edit_text("⏳ در حال تحلیل صدای ویدیو... این فرآیند ممکن است چند دقیقه طول بکشد. لطفاً صبور باشید.")
+    await callback.answer()
+
+    try:
+        titles = await extract_movie_titles_from_audio(shortcode)
+        
+        if titles:
+            found_movies_text = "\n".join(f"• {title}" for title in titles)
+            response_text = f"از تحلیل صدای این ویدیو، فیلم‌های زیر شناسایی شد:\n\n{found_movies_text}"
+            await callback.message.edit_text(response_text, reply_markup=None)
+        else:
+            await callback.message.edit_text("❌ متاسفانه فیلمی در صدای این ویدیو پیدا نشد یا در تحلیل مشکلی رخ داد.")
+            
+    except Exception as e:
+        logger.error(f"Error in audio analysis callback for {shortcode}: {e}", exc_info=True)
+        await callback.message.edit_text("❌ خطایی غیرمنتظره در فرآیند تحلیل صدا رخ داد.")
+        
 
 @router.callback_query(F.data.startswith("download_video_"))
 async def download_video_callback(callback: CallbackQuery):
