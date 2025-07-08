@@ -60,8 +60,8 @@ async def handle_instagram_post_link(message: Message, match: re.Match):
         ],
         [
             InlineKeyboardButton(
-                text="🔎 Analyze from Audio",
-                callback_data=f"audio_analyze_{shortcode}"
+                text="🔎 Analyze video",
+                callback_data=f"video_analyze_{shortcode}"
             )
         ],
         [

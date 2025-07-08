@@ -82,7 +82,7 @@ async def extract_movie_titles_from_caption(caption: str) -> List[str]:
     except Exception as e:
         logger.error(f"Error extracting movie titles with AI: {e}")
         return []
-async def extract_movie_titles_from_audio(shortcode: str) -> list[str]:
+async def extract_movie_titles_from_video(shortcode: str) -> list[str]:
     """
     Downloads a video, uploads it to Gemini, waits for it to be active,
     and then uses it to find movie titles.
@@ -95,25 +95,25 @@ async def extract_movie_titles_from_audio(shortcode: str) -> list[str]:
             return []
 
         logger.info(f"Uploading video file {video_path} to Gemini...")
-        # Use run_in_executor for the synchronous upload call
         loop = asyncio.get_event_loop()
-        video_file_response = await loop.run_in_executor(None, lambda: genai.upload_file(path=video_path))
+        video_file_response = await loop.run_in_executor(
+            None, lambda: genai.upload_file(path=video_path)
+        )
         logger.info(f"File upload started for {video_file_response.name}. Waiting for it to become active.")
 
-        # --- FIX: Poll for file to become active ---
         while video_file_response.state.name == "PROCESSING":
-            await asyncio.sleep(5)  # Wait for 5 seconds before checking again
-            # Get the file's current state
-            video_file_response = await loop.run_in_executor(None, lambda: genai.get_file(name=video_file_response.name))
+            await asyncio.sleep(5)
+            video_file_response = await loop.run_in_executor(
+                None, lambda: genai.get_file(name=video_file_response.name)
+            )
             logger.info(f"Current file state: {video_file_response.state.name}")
 
         if video_file_response.state.name != "ACTIVE":
             logger.error(f"File {video_file_response.name} failed processing. State: {video_file_response.state.name}")
             return []
-        # --- END FIX ---
 
         logger.info(f"File {video_file_response.name} is now ACTIVE.")
-        video_file = video_file_response # The file is ready to be used
+        video_file = video_file_response
 
         prompt = """
         From the video, please extract all movie titles you can find.
@@ -136,7 +136,7 @@ async def extract_movie_titles_from_audio(shortcode: str) -> list[str]:
         if video_path and os.path.exists(video_path):
             os.remove(video_path)
             logger.info("Cleaned up temporary video file.")
-        # Clean up the file on the server after use
+        
         if video_file:
             try:
                 loop = asyncio.get_event_loop()

@@ -104,7 +104,7 @@ async def add_to_database_callback(callback: CallbackQuery):
                 await callback.message.answer(f"An error occurred while processing the movie '{title}'.")
 
 
-@router.callback_query(F.data.startswith("audio_analyze_"))
+@router.callback_query(F.data.startswith("video_analyze_"))
 async def analyze_audio_callback(callback: CallbackQuery):
     """Handles the audio analysis button press."""
     shortcode = callback.data.replace("audio_analyze_", "")
@@ -116,7 +116,7 @@ async def analyze_audio_callback(callback: CallbackQuery):
 
         if titles:
             found_movies_text = "\n".join(f"• {title}" for title in titles)
-            response_text = f"The following movies were identified from the video's audio:\n\n{found_movies_text}"
+            response_text = f"The following movies were identified from the video:\n\n{found_movies_text}"
 
             callback_id = str(uuid.uuid4())
             callback_movie_cache[callback_id] = titles
