@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from moviepy.video.io.VideoFileClip import VideoFileClip
 import asyncio
+import aiohttp
 
 logger = get_logger()
 cl = Client()
@@ -49,16 +50,37 @@ async def get_post_caption(shortcode: str) -> Optional[str]:
 async def download_instagram_video(shortcode: str) -> Optional[str]:
     """Downloads a video from an Instagram post."""
     try:
-        logger.info(f"Downloading video for shortcode: {shortcode}")
-        download_dir = Path("downloads")
-        download_dir.mkdir(exist_ok=True)
-        media_pk = cl.media_pk_from_url(f"https://www.instagram.com/p/{shortcode}/")
-        video_path = cl.video_download(media_pk, folder=download_dir)
-        logger.info(f"Video downloaded successfully: {video_path}")
-        return str(video_path)
+        base_url = "https://fastsaverapi.com/get-info"
+    
+        # ⬇️ Replace with your actual media URL and token
+        params = {
+            "url": "https://www.instagram.com/p/C_some_post_id/",
+            "token": "YOUR_API_TOKEN_HERE" 
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            # Pass the parameters using the 'params' argument
+            async with session.get(base_url, params=params) as response:
+                print(f"Requesting URL: {response.url}") # Shows the final URL with parameters
+                print(f"Status Code: {response.status}")
+                
+                # Use .json() if you expect a JSON response, which is common for APIs
+                data = await response.json() 
+                print(data)
     except Exception as e:
         logger.error(f"Error downloading video from {shortcode}: {e}", exc_info=True)
         return None
+    # try:
+    #     logger.info(f"Downloading video for shortcode: {shortcode}")
+    #     download_dir = Path("downloads")
+    #     download_dir.mkdir(exist_ok=True)
+    #     media_pk = cl.media_pk_from_url(f"https://www.instagram.com/p/{shortcode}/")
+    #     video_path = cl.video_download(media_pk, folder=download_dir)
+    #     logger.info(f"Video downloaded successfully: {video_path}")
+    #     return str(video_path)
+    # except Exception as e:
+    #     logger.error(f"Error downloading video from {shortcode}: {e}", exc_info=True)
+    #     return None
 
 
 async def extract_movie_titles_from_caption(caption: str) -> List[str]:

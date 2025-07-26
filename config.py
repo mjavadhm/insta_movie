@@ -37,5 +37,6 @@ if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY not set in .env")
 
 # Instagram credentials
-INSTAGRAM_USERNAME = getenv("INSTAGRAM_USERNAME")
-INSTAGRAM_PASSWORD = getenv("INSTAGRAM_PASSWORD")
+FASTSAVER_API_TOKEN = getenv("FASTSAVER_API_TOKEN")
+if not FASTSAVER_API_TOKEN:
+    raise ValueError("FASTSAVER_API_TOKEN not set in .env")

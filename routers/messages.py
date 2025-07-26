@@ -38,15 +38,17 @@ async def handle_instagram_post_link(message: Message, match: re.Match):
     await message.reply("Processing the link...")
     caption = await get_post_caption(shortcode)
     if not caption:
-        await message.reply("Error getting the caption.")
-        return
-
-    movie_titles = await extract_movie_titles_from_caption(caption)
-    if not movie_titles:
-        response_text = "No movie titles were found in the caption."
+        response_text = 'no caption'
+        movie_titles = None
+        # await message.reply("Error getting the caption.")
+        # return
     else:
-        found_movies_text = "\n".join(f"• {title}" for title in movie_titles)
-        response_text = f"The following movies were found in the post's caption:\n\n{found_movies_text}"
+        movie_titles = await extract_movie_titles_from_caption(caption)
+        if not movie_titles:
+            response_text = "No movie titles were found in the caption."
+        else:
+            found_movies_text = "\n".join(f"• {title}" for title in movie_titles)
+            response_text = f"The following movies were found in the post's caption:\n\n{found_movies_text}"
 
     callback_id = str(uuid.uuid4())
     callback_movie_cache[callback_id] = movie_titles
