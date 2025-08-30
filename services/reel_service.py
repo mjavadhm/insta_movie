@@ -1,86 +1,84 @@
-from instagrapi import Client
-from instagrapi.exceptions import LoginRequired
-import google.generativeai as genai
-from config import GEMINI_API_KEY, INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD
-from logger import get_logger
-from typing import List, Optional
+import asyncio
 import os
 from pathlib import Path
-from moviepy.video.io.VideoFileClip import VideoFileClip
-import asyncio
+from typing import List, Optional, Dict
 import aiohttp
+import google.generativeai as genai
+from config import GEMINI_API_KEY, FASTSAVER_API_TOKEN
+from logger import get_logger
 
 logger = get_logger()
-cl = Client()
 
-SESSION_FILE = f"./instagrapi_session.json"
-
-try:
-    if os.path.exists(SESSION_FILE):
-        cl.load_settings(SESSION_FILE)
-        logger.info("✅ Instagrapi session loaded successfully from file.")
-        cl.get_timeline_feed()
-    else:
-        logger.info("Session file not found, logging in with username and password.")
-        cl.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
-        cl.dump_settings(SESSION_FILE)
-        logger.info("✅ Logged in and saved instagrapi session to file.")
-except LoginRequired:
-    logger.warning("Session has expired. Re-logging in...")
-    cl.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
-    cl.dump_settings(SESSION_FILE)
-    logger.info("✅ Re-logged in and saved new instagrapi session to file.")
-except Exception as e:
-    logger.error(f"❌ An unexpected error occurred during Instagram client setup: {e}")
-
+# Configure Generative AI
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash')
+model = genai.GenerativeModel('gemini-2.5-pro')
 
+# API endpoint
+API_BASE_URL = "https://fastsaverapi.com/get-info"
+
+async def _fetch_media_info(shortcode: str) -> Optional[Dict]:
+    """Fetches media information from the FastSaverAPI."""
+    params = {
+        "url": f"https://www.instagram.com/p/{shortcode}/",
+        "token": FASTSAVER_API_TOKEN
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(API_BASE_URL, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if not data.get("error"):
+                        logger.info(f"✅ Successfully fetched info for {shortcode}")
+                        return data
+                    else:
+                        logger.error(f"❌ API returned an error for {shortcode}: {data.get('message')}")
+                        return None
+                else:
+                    logger.error(f"❌ Failed to fetch info for {shortcode}. Status: {response.status}")
+                    return None
+    except Exception as e:
+        logger.error(f"❌ Exception while fetching media info for {shortcode}: {e}", exc_info=True)
+        return None
 
 async def get_post_caption(shortcode: str) -> Optional[str]:
-    """Fetches the caption of an Instagram post."""
-    try:
-        media_pk = cl.media_pk_from_url(f"https://www.instagram.com/p/{shortcode}/")
-        media_info = cl.media_info(media_pk)
-        return media_info.caption_text
-    except Exception as e:
-        logger.error(f"Error fetching post caption for {shortcode}: {e}")
-        return None
+    """Fetches the caption of an Instagram post using the new API."""
+    media_info = await _fetch_media_info(shortcode)
+    return media_info.get("caption") if media_info else None
 
 async def download_instagram_video(shortcode: str) -> Optional[str]:
-    """Downloads a video from an Instagram post."""
-    try:
-        base_url = "https://fastsaverapi.com/get-info"
-    
-        # ⬇️ Replace with your actual media URL and token
-        params = {
-            "url": "https://www.instagram.com/p/C_some_post_id/",
-            "token": "YOUR_API_TOKEN_HERE" 
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            # Pass the parameters using the 'params' argument
-            async with session.get(base_url, params=params) as response:
-                print(f"Requesting URL: {response.url}") # Shows the final URL with parameters
-                print(f"Status Code: {response.status}")
-                
-                # Use .json() if you expect a JSON response, which is common for APIs
-                data = await response.json() 
-                print(data)
-    except Exception as e:
-        logger.error(f"Error downloading video from {shortcode}: {e}", exc_info=True)
+    """Downloads a video from an Instagram post using the new API."""
+    media_info = await _fetch_media_info(shortcode)
+    if not media_info or not media_info.get("download_url"):
+        logger.error(f"Could not get download URL for {shortcode}")
         return None
-    # try:
-    #     logger.info(f"Downloading video for shortcode: {shortcode}")
-    #     download_dir = Path("downloads")
-    #     download_dir.mkdir(exist_ok=True)
-    #     media_pk = cl.media_pk_from_url(f"https://www.instagram.com/p/{shortcode}/")
-    #     video_path = cl.video_download(media_pk, folder=download_dir)
-    #     logger.info(f"Video downloaded successfully: {video_path}")
-    #     return str(video_path)
-    # except Exception as e:
-    #     logger.error(f"Error downloading video from {shortcode}: {e}", exc_info=True)
-    #     return None
+
+    download_url = media_info["download_url"]
+    
+    try:
+        logger.info(f"Downloading video for shortcode: {shortcode}")
+        download_dir = Path("downloads")
+        download_dir.mkdir(exist_ok=True)
+        # Use the shortcode to create a unique filename
+        video_path = download_dir / f"{shortcode}.mp4"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(download_url) as response:
+                if response.status == 200:
+                    with open(video_path, "wb") as f:
+                        while True:
+                            chunk = await response.content.read(1024)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                    logger.info(f"✅ Video downloaded successfully: {video_path}")
+                    return str(video_path)
+                else:
+                    logger.error(f"❌ Failed to download video from {download_url}. Status: {response.status}")
+                    return None
+
+    except Exception as e:
+        logger.error(f"❌ Error downloading video from {shortcode}: {e}", exc_info=True)
+        return None
 
 
 async def extract_movie_titles_from_caption(caption: str) -> List[str]:
@@ -102,12 +100,12 @@ async def extract_movie_titles_from_caption(caption: str) -> List[str]:
             return titles
         return []
     except Exception as e:
-        logger.error(f"Error extracting movie titles with AI: {e}")
+        logger.error(f"❌ Error extracting movie titles with AI: {e}")
         return []
+
 async def extract_movie_titles_from_video(shortcode: str) -> list[str]:
     """
-    Downloads a video, uploads it to Gemini, waits for it to be active,
-    and then uses it to find movie titles.
+    Downloads a video, uploads it to Gemini, and uses it to find movie titles.
     """
     video_path = None
     video_file = None
@@ -134,12 +132,12 @@ async def extract_movie_titles_from_video(shortcode: str) -> list[str]:
             logger.error(f"File {video_file_response.name} failed processing. State: {video_file_response.state.name}")
             return []
 
-        logger.info(f"File {video_file_response.name} is now ACTIVE.")
+        logger.info(f"✅ File {video_file_response.name} is now ACTIVE.")
         video_file = video_file_response
 
         prompt = """
         From the video, please extract all movie titles you can find.
-        If theres None please try to found the movie or movies that are in the video.
+        If there are none, please try to find the movie or movies that are in the video.
         List each movie title on a new line. Do not provide any extra explanation, just the titles.
         If no movie title is mentioned, return an empty response.
         """
@@ -153,7 +151,7 @@ async def extract_movie_titles_from_video(shortcode: str) -> list[str]:
         return []
 
     except Exception as e:
-        logger.error(f"Error extracting titles from video for {shortcode}: {e}", exc_info=True)
+        logger.error(f"❌ Error extracting titles from video for {shortcode}: {e}", exc_info=True)
         return []
     finally:
         if video_path and os.path.exists(video_path):
@@ -166,4 +164,4 @@ async def extract_movie_titles_from_video(shortcode: str) -> list[str]:
                 await loop.run_in_executor(None, lambda: genai.delete_file(name=video_file.name))
                 logger.info(f"Deleted remote file {video_file.name}.")
             except Exception as e:
-                logger.error(f"Failed to delete remote file {video_file.name}: {e}")
+                logger.error(f"❌ Failed to delete remote file {video_file.name}: {e}")
